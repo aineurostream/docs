@@ -15,23 +15,23 @@
 
 ```mermaid
 graph TB
-    User[Пользователь] -->|Говорит на исходном языке| SynchroClient
+    User["Пользователь"] -->|"Говорит на исходном языке"| SynchroClient
     
-    subgraph Общая архитектура
-        SynchroClient[synchro-python<br>Клиент] <-->|Двунаправленный<br>аудиопоток| StreamingProxy
+    subgraph "Общая архитектура"
+        SynchroClient["synchro-python<br>Клиент"] <-->|"Двунаправленный<br>аудиопоток"| StreamingProxy
         
-        StreamingProxy[streaming-proxy<br>Диспетчер] -->|Передача<br>аудио| WhisperAPI
-        WhisperAPI[whisper_grpc_api<br>ASR] -->|Распознанный<br>текст| StreamingProxy
+        StreamingProxy["streaming-proxy<br>Диспетчер"] -->|"Передача<br>аудио"| WhisperAPI
+        WhisperAPI["whisper_grpc_api<br>ASR"] -->|"Распознанный<br>текст"| StreamingProxy
         
-        StreamingProxy -->|Запрос<br>перевода| LLM[LLM сервис]
-        LLM -->|Переведенный<br>текст| StreamingProxy
+        StreamingProxy -->|"Запрос<br>перевода"| LLM["LLM сервис"]
+        LLM -->|"Переведенный<br>текст"| StreamingProxy
         
-        StreamingProxy -->|Текст для<br>синтеза| TTS
-        TTS[tts_grpc_api<br>TTS] -->|Синтезированная<br>речь| StreamingProxy
+        StreamingProxy -->|"Текст для<br>синтеза"| TTS
+        TTS["tts_grpc_api<br>TTS"] -->|"Синтезированная<br>речь"| StreamingProxy
     end
     
-    StreamingProxy -->|Переведенная речь| SynchroClient
-    SynchroClient -->|Воспроизведение<br>перевода| User
+    StreamingProxy -->|"Переведенная речь"| SynchroClient
+    SynchroClient -->|"Воспроизведение<br>перевода"| User
     
     classDef main fill:#f9f,stroke:#333,stroke-width:2px;
     classDef secondary fill:#bbf,stroke:#333,stroke-width:1px;
@@ -48,19 +48,19 @@ synchro-python - это клиентское приложение, которо�
 
 ```mermaid
 flowchart TB
-    subgraph synchro-python
+    subgraph "synchro-python"
         direction TB
         
-        AudioInput[Аудиовход<br>Микрофон] -->|Запись<br>аудио| AudioPreprocess[Предобработка<br>аудио]
-        AudioPreprocess -->|Аудиопоток| WebsocketClient[WebSocket<br>клиент]
+        AudioInput["Аудиовход<br>Микрофон"] -->|"Запись<br>аудио"| AudioPreprocess["Предобработка<br>аудио"]
+        AudioPreprocess -->|"Аудиопоток"| WebsocketClient["WebSocket<br>клиент"]
         
-        WebsocketClient -->|Отправка<br>аудиопотока| StreamingProxy[streaming-proxy]
-        StreamingProxy -->|Получение<br>переведенного<br>аудио| WebsocketClient
+        WebsocketClient -->|"Отправка<br>аудиопотока"| StreamingProxy["streaming-proxy"]
+        StreamingProxy -->|"Получение<br>переведенного<br>аудио"| WebsocketClient
         
-        WebsocketClient -->|Переведенный<br>аудиопоток| AudioOutput[Аудиовыход<br>Динамики]
+        WebsocketClient -->|"Переведенный<br>аудиопоток"| AudioOutput["Аудиовыход<br>Динамики"]
         
-        UserInterface[Пользовательский<br>интерфейс] <-->|Управление| WebsocketClient
-        UserInterface <-->|Настройки<br>языков| LanguageSettings[Настройки<br>языков перевода]
+        UserInterface["Пользовательский<br>интерфейс"] <-->|"Управление"| WebsocketClient
+        UserInterface <-->|"Настройки<br>языков"| LanguageSettings["Настройки<br>языков перевода"]
     end
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
@@ -108,35 +108,35 @@ streaming-proxy - центральный компонент системы, ко
 
 ```mermaid
 flowchart TB
-    subgraph streaming-proxy
+    subgraph "streaming-proxy"
         direction TB
         
-        WebSocketServer[WebSocket<br>сервер] -->|Входящий<br>аудиопоток| AudioQueue[Очередь<br>аудиопакетов]
+        WebSocketServer["WebSocket<br>сервер"] -->|"Входящий<br>аудиопоток"| AudioQueue["Очередь<br>аудиопакетов"]
         
-        AudioQueue -->|Блоки<br>аудио| ASRClient[Клиент ASR<br>(gRPC)]
-        ASRClient -->|Запрос<br>распознавания| WhisperAPI[whisper_grpc_api]
-        WhisperAPI -->|Распознанный<br>текст| TextProcessor[Обработчик<br>текста]
+        AudioQueue -->|"Блоки<br>аудио"| ASRClient["Клиент ASR<br>(gRPC)"]
+        ASRClient -->|"Запрос<br>распознавания"| WhisperAPI["whisper_grpc_api"]
+        WhisperAPI -->|"Распознанный<br>текст"| TextProcessor["Обработчик<br>текста"]
         
-        TextProcessor -->|Текст для<br>перевода| TranslationClient[Клиент<br>перевода]
-        TranslationClient -->|API<br>запрос| LLM[LLM сервис]
-        LLM -->|Переведенный<br>текст| TTSClient[Клиент TTS<br>(gRPC)]
+        TextProcessor -->|"Текст для<br>перевода"| TranslationClient["Клиент<br>перевода"]
+        TranslationClient -->|"API<br>запрос"| LLM["LLM сервис"]
+        LLM -->|"Переведенный<br>текст"| TTSClient["Клиент TTS<br>(gRPC)"]
         
-        TTSClient -->|Запрос<br>синтеза| TTS[tts_grpc_api]
-        TTS -->|Синтезированная<br>речь| AudioResponseQueue[Очередь исходящих<br>аудиопакетов]
+        TTSClient -->|"Запрос<br>синтеза"| TTS["tts_grpc_api"]
+        TTS -->|"Синтезированная<br>речь"| AudioResponseQueue["Очередь исходящих<br>аудиопакетов"]
         
-        AudioResponseQueue -->|Переведенный<br>аудиопоток| WebSocketServer
+        AudioResponseQueue -->|"Переведенный<br>аудиопоток"| WebSocketServer
         
-        SessionManager[Менеджер<br>сессий] <-->|Управление<br>состоянием| WebSocketServer
-        SessionManager <-->|Контроль<br>процессов| AudioQueue
-        SessionManager <-->|Контроль<br>процессов| TextProcessor
+        SessionManager["Менеджер<br>сессий"] <-->|"Управление<br>состоянием"| WebSocketServer
+        SessionManager <-->|"Контроль<br>процессов"| AudioQueue
+        SessionManager <-->|"Контроль<br>процессов"| TextProcessor
         
-        ErrorHandler[Обработчик<br>ошибок] <-->|Мониторинг| SessionManager
-        ErrorHandler <-->|Обработка<br>ошибок| ASRClient
-        ErrorHandler <-->|Обработка<br>ошибок| TranslationClient
-        ErrorHandler <-->|Обработка<br>ошибок| TTSClient
+        ErrorHandler["Обработчик<br>ошибок"] <-->|"Мониторинг"| SessionManager
+        ErrorHandler <-->|"Обработка<br>ошибок"| ASRClient
+        ErrorHandler <-->|"Обработка<br>ошибок"| TranslationClient
+        ErrorHandler <-->|"Обработка<br>ошибок"| TTSClient
     end
     
-    SynchroClient[synchro-python] <-->|WebSocket| WebSocketServer
+    SynchroClient["synchro-python"] <-->|"WebSocket"| WebSocketServer
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
     classDef queue fill:#bfb,stroke:#333,stroke-width:1px;
@@ -199,28 +199,28 @@ whisper_grpc_api - сервис автоматического распозна�
 
 ```mermaid
 flowchart TB
-    subgraph whisper_grpc_api
+    subgraph "whisper_grpc_api"
         direction TB
         
-        gRPCServer[gRPC<br>сервер] -->|Аудиоданные| InputProcessor[Процессор<br>входных данных]
+        gRPCServer["gRPC<br>сервер"] -->|"Аудиоданные"| InputProcessor["Процессор<br>входных данных"]
         
-        InputProcessor -->|Подготовленное<br>аудио| WhisperModel[Модель<br>Whisper]
+        InputProcessor -->|"Подготовленное<br>аудио"| WhisperModel["Модель<br>Whisper"]
         
-        WhisperModel -->|Распознанный<br>текст| PostProcessor[Пост-процессор<br>текста]
+        WhisperModel -->|"Распознанный<br>текст"| PostProcessor["Пост-процессор<br>текста"]
         
-        PostProcessor -->|Форматированный<br>текст| ResponseFormatter[Форматировщик<br>ответа]
+        PostProcessor -->|"Форматированный<br>текст"| ResponseFormatter["Форматировщик<br>ответа"]
         
-        ResponseFormatter -->|gRPC<br>ответ| gRPCServer
+        ResponseFormatter -->|"gRPC<br>ответ"| gRPCServer
         
-        ModelManager[Менеджер<br>моделей] <-->|Загрузка<br>и обновление| WhisperModel
+        ModelManager["Менеджер<br>моделей"] <-->|"Загрузка<br>и обновление"| WhisperModel
         
-        LanguageDetector[Детектор<br>языка] <-->|Определение<br>языка| WhisperModel
+        LanguageDetector["Детектор<br>языка"] <-->|"Определение<br>языка"| WhisperModel
         
-        SegmentManager[Менеджер<br>сегментов речи] <-->|Разделение<br>на сегменты| InputProcessor
-        SegmentManager <-->|Объединение<br>результатов| PostProcessor
+        SegmentManager["Менеджер<br>сегментов речи"] <-->|"Разделение<br>на сегменты"| InputProcessor
+        SegmentManager <-->|"Объединение<br>результатов"| PostProcessor
     end
     
-    StreamingProxy[streaming-proxy] <-->|gRPC| gRPCServer
+    StreamingProxy["streaming-proxy"] <-->|"gRPC"| gRPCServer
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
     classDef processor fill:#bfb,stroke:#333,stroke-width:1px;
@@ -274,27 +274,27 @@ tts_grpc_api - сервис синтеза речи (TTS), преобразую�
 
 ```mermaid
 flowchart TB
-    subgraph tts_grpc_api
+    subgraph "tts_grpc_api"
         direction TB
         
-        gRPCServer[gRPC<br>сервер] -->|Текст для<br>синтеза| TextPreprocessor[Препроцессор<br>текста]
+        gRPCServer["gRPC<br>сервер"] -->|"Текст для<br>синтеза"| TextPreprocessor["Препроцессор<br>текста"]
         
-        TextPreprocessor -->|Нормализованный<br>текст| TTSModel[Модель<br>синтеза речи]
+        TextPreprocessor -->|"Нормализованный<br>текст"| TTSModel["Модель<br>синтеза речи"]
         
-        VoiceManager[Менеджер<br>голосов] <-->|Выбор<br>голоса| TTSModel
+        VoiceManager["Менеджер<br>голосов"] <-->|"Выбор<br>голоса"| TTSModel
         
-        TTSModel -->|Синтезированное<br>аудио| AudioPostprocessor[Постпроцессор<br>аудио]
+        TTSModel -->|"Синтезированное<br>аудио"| AudioPostprocessor["Постпроцессор<br>аудио"]
         
-        AudioPostprocessor -->|Обработанное<br>аудио| StreamingManager[Менеджер<br>потоковой передачи]
+        AudioPostprocessor -->|"Обработанное<br>аудио"| StreamingManager["Менеджер<br>потоковой передачи"]
         
-        StreamingManager -->|Аудиопоток| gRPCServer
+        StreamingManager -->|"Аудиопоток"| gRPCServer
         
-        ModelSelector[Селектор<br>моделей] <-->|Выбор модели<br>по языку| TTSModel
+        ModelSelector["Селектор<br>моделей"] <-->|"Выбор модели<br>по языку"| TTSModel
         
-        ProsodyControl[Контроль<br>просодии] <-->|Настройка<br>интонации| TTSModel
+        ProsodyControl["Контроль<br>просодии"] <-->|"Настройка<br>интонации"| TTSModel
     end
     
-    StreamingProxy[streaming-proxy] <-->|gRPC| gRPCServer
+    StreamingProxy["streaming-proxy"] <-->|"gRPC"| gRPCServer
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
     classDef processor fill:#bfb,stroke:#333,stroke-width:1px;
@@ -384,44 +384,44 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    subgraph Инфраструктура
-        subgraph Кластер Kubernetes
-            PC[synchro-python<br>Клиентские контейнеры]
+    subgraph "Инфраструктура"
+        subgraph "Кластер Kubernetes"
+            PC["synchro-python<br>Клиентские контейнеры"]
             
-            subgraph Сервисный слой
-                SPD[streaming-proxy<br>Deployment]
-                SPD -->|Масштабирование| SPD1[Pod 1]
-                SPD -->|Масштабирование| SPD2[Pod 2]
-                SPD -->|Масштабирование| SPD3[Pod n]
+            subgraph "Сервисный слой"
+                SPD["streaming-proxy<br>Deployment"]
+                SPD -->|"Масштабирование"| SPD1["Pod 1"]
+                SPD -->|"Масштабирование"| SPD2["Pod 2"]
+                SPD -->|"Масштабирование"| SPD3["Pod n"]
                 
-                ASRD[whisper_grpc_api<br>Deployment]
-                ASRD -->|Масштабирование| ASRD1[Pod 1]
-                ASRD -->|Масштабирование| ASRD2[Pod 2]
+                ASRD["whisper_grpc_api<br>Deployment"]
+                ASRD -->|"Масштабирование"| ASRD1["Pod 1"]
+                ASRD -->|"Масштабирование"| ASRD2["Pod 2"]
                 
-                TTSD[tts_grpc_api<br>Deployment]
-                TTSD -->|Масштабирование| TTSD1[Pod 1]
-                TTSD -->|Масштабирование| TTSD2[Pod 2]
+                TTSD["tts_grpc_api<br>Deployment"]
+                TTSD -->|"Масштабирование"| TTSD1["Pod 1"]
+                TTSD -->|"Масштабирование"| TTSD2["Pod 2"]
             end
             
-            SPS[streaming-proxy<br>Service]
-            ASRS[whisper_grpc_api<br>Service]
-            TTSS[tts_grpc_api<br>Service]
+            SPS["streaming-proxy<br>Service"]
+            ASRS["whisper_grpc_api<br>Service"]
+            TTSS["tts_grpc_api<br>Service"]
             
             SPD1 & SPD2 & SPD3 --- SPS
             ASRD1 & ASRD2 --- ASRS
             TTSD1 & TTSD2 --- TTSS
         end
         
-        LB[Load Balancer]
+        LB["Load Balancer"]
         
-        LLM[Внешний LLM<br>сервис]
+        LLM["Внешний LLM<br>сервис"]
     end
     
-    PC <-->|WebSocket| LB
-    LB <-->|Маршрутизация| SPS
-    SPS <-->|gRPC| ASRS
-    SPS <-->|gRPC| TTSS
-    SPS <-->|API| LLM
+    PC <-->|"WebSocket"| LB
+    LB <-->|"Маршрутизация"| SPS
+    SPS <-->|"gRPC"| ASRS
+    SPS <-->|"gRPC"| TTSS
+    SPS <-->|"API"| LLM
     
     classDef client fill:#bfb,stroke:#333,stroke-width:1px;
     classDef service fill:#bbf,stroke:#333,stroke-width:1px;

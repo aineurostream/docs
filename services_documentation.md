@@ -51,24 +51,55 @@ flowchart TB
     subgraph "synchro-python"
         direction TB
         
-        AudioInput["Аудиовход<br>Микрофон"] -->|"Запись<br>аудио"| AudioPreprocess["Предобработка<br>аудио"]
-        AudioPreprocess -->|"Аудиопоток"| WebsocketClient["WebSocket<br>клиент"]
+        subgraph "Аудиовходы"
+            InputChannel["Микрофон<br>InputChannelNode"] 
+            InputFile["Аудиофайл<br>InputFileNode"]
+        end
         
-        WebsocketClient -->|"Отправка<br>аудиопотока"| StreamingProxy["streaming-proxy"]
-        StreamingProxy -->|"Получение<br>переведенного<br>аудио"| WebsocketClient
+        subgraph "Процессоры"
+            VADNode["Детектор голоса<br>VADNode"]
+            DenoiserNode["Шумоподавление<br>DenoiserNode"]
+            NormalizerNode["Нормализация<br>NormalizerNode"]
+            ResamplerNode["Ресемплер<br>ResamplerNode"]
+            MixerNode["Микшер<br>MixerNode"]
+        end
         
-        WebsocketClient -->|"Переведенный<br>аудиопоток"| AudioOutput["Аудиовыход<br>Динамики"]
+        InputChannel -->|"Аудиопоток"| MixerNode
+        InputFile -->|"Аудиопоток"| MixerNode
         
-        UserInterface["Пользовательский<br>интерфейс"] <-->|"Управление"| WebsocketClient
-        UserInterface <-->|"Настройки<br>языков"| LanguageSettings["Настройки<br>языков перевода"]
+        MixerNode -->|"Объединенный<br>поток"| VADNode
+        VADNode -->|"Аудиопоток<br>с голосом"| DenoiserNode
+        DenoiserNode -->|"Очищенный<br>аудиопоток"| NormalizerNode
+        NormalizerNode -->|"Нормализованный<br>аудиопоток"| ResamplerNode
+        
+        ResamplerNode -->|"Подготовленный<br>аудиопоток"| ConnectorNode["Сетевой коннектор<br>SeamlessConnectorNode"]
+        
+        ConnectorNode <-->|"Socket.IO<br>WebSocket"| StreamingProxy["streaming-proxy"]
+        
+        ConnectorNode -->|"Переведенный<br>аудиопоток"| OutputProcessor["Процессор вывода"]
+        
+        OutputProcessor -->|"Аудиопоток"| OutputChannel["Динамики<br>OutputChannelNode"]
+        OutputProcessor -->|"Аудиопоток"| OutputFile["Запись в файл<br>OutputFileNode"]
+        
+        GraphManager["Менеджер графа<br>GraphManager"] <-->|"Управление<br>компонентами"| ConnectorNode
+        GraphManager <-->|"Управление<br>компонентами"| MixerNode
+        GraphManager <-->|"Управление<br>компонентами"| InputChannel
+        GraphManager <-->|"Управление<br>компонентами"| OutputChannel
+        
+        ConfigManager["Конфигурация<br>Настройки языков"] -->|"Параметры"| GraphManager
+        UserInterface["CLI-интерфейс<br>пользователя"] -->|"Команды"| GraphManager
     end
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef io fill:#bfb,stroke:#333,stroke-width:1px;
-    classDef external fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef processor fill:#bfb,stroke:#333,stroke-width:1px;
+    classDef io fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef manager fill:#ddd,stroke:#333,stroke-width:1px;
+    classDef external fill:#fbb,stroke:#333,stroke-width:1px;
     
-    class WebsocketClient,AudioPreprocess core;
-    class AudioInput,AudioOutput,UserInterface,LanguageSettings io;
+    class ConnectorNode,GraphManager core;
+    class VADNode,DenoiserNode,NormalizerNode,ResamplerNode,MixerNode,OutputProcessor processor;
+    class InputChannel,InputFile,OutputChannel,OutputFile io;
+    class ConfigManager,UserInterface manager;
     class StreamingProxy external;
 ```
 
@@ -97,10 +128,14 @@ flowchart TB
 ### Технические детали:
 
 - **Язык программирования**: Python
-- **Протоколы связи**: WebSocket для аудиопотоков
-- **Формат аудио**: 16-битный PCM, 16 кГц, моно
-- **Аудиобиблиотеки**: PyAudio для захвата и воспроизведения аудио
-- **Сетевые библиотеки**: websocket-client или aiohttp
+- **Архитектура**: Графовая система с узлами и рёбрами для обработки аудиопотоков
+- **Протоколы связи**: Socket.IO через WebSocket для аудиопотоков
+- **Формат аудио**: 16-битный PCM, частота дискретизации от 16 кГц до 48 кГц, моно
+- **Конфигурация**: Hydra для управления конфигурацией и параметрами
+- **Клиентские библиотеки**: PyAudio для захвата и воспроизведения аудио, SimpleClient для Socket.IO
+- **Обработка аудио**: Модули VAD (Voice Activity Detection), шумоподавление, нормализация, ресемплинг
+- **Форматы ввода/вывода**: Микрофон, аудиофайлы, динамики, запись в файл
+- **Менеджер графа**: Управление жизненным циклом узлов обработки, координация потоков данных
 
 ## streaming-proxy (Диспетчер)
 
@@ -111,87 +146,110 @@ flowchart TB
     subgraph "streaming-proxy"
         direction TB
         
-        WebSocketServer["WebSocket<br>сервер"] -->|"Входящий<br>аудиопоток"| AudioQueue["Очередь<br>аудиопакетов"]
+        SocketIOServer["Socket.IO Server<br>AsyncServer"] -->|"Обработка<br>событий"| SessionManager["Менеджер сессий<br>SessionManager"]
         
-        AudioQueue -->|"Блоки<br>аудио"| ASRClient["Клиент ASR<br>(gRPC)"]
-        ASRClient -->|"Запрос<br>распознавания"| WhisperAPI["whisper_grpc_api"]
-        WhisperAPI -->|"Распознанный<br>текст"| TextProcessor["Обработчик<br>текста"]
+        SessionManager -->|"Создание и<br>управление"| PipelineManager["Менеджер пайплайнов<br>PipelineManager"]
         
-        TextProcessor -->|"Текст для<br>перевода"| TranslationClient["Клиент<br>перевода"]
-        TranslationClient -->|"API<br>запрос"| LLM["LLM сервис"]
-        LLM -->|"Переведенный<br>текст"| TTSClient["Клиент TTS<br>(gRPC)"]
+        subgraph "Пайплайн (PipelineCore)"
+            SttLayer["Слой распознавания речи<br>SttLayer"] -->|"Распознанный<br>текст"| TranslationLayer["Слой перевода<br>TranslationLayer"]
+            TranslationLayer -->|"Переведенный<br>текст"| TtsLayer["Слой синтеза речи<br>TtsLayer"]
+        end
         
-        TTSClient -->|"Запрос<br>синтеза"| TTS["tts_grpc_api"]
-        TTS -->|"Синтезированная<br>речь"| AudioResponseQueue["Очередь исходящих<br>аудиопакетов"]
+        PipelineManager -->|"Создание и<br>управление"| SttLayer
+        TtsLayer -->|"Аудио<br>результат"| PipelineCallback["Callback<br>функция"]
+        PipelineCallback -->|"Отправка<br>аудио"| SocketIOServer
         
-        AudioResponseQueue -->|"Переведенный<br>аудиопоток"| WebSocketServer
+        subgraph "Коннекторы к внешним сервисам"
+            WhisperConnector["Коннектор ASR<br>WhisperSttConnector"] <-->|"gRPC"| WhisperAPI["whisper_grpc_api"]
+            LlmConnector["Коннектор LLM<br>LlamaCppServerConnector"] <-->|"HTTP API"| LLM["LLM сервис"]
+            TtsConnector["Коннектор TTS<br>PiperVoskConnector"] <-->|"gRPC"| TTS["tts_grpc_api"]
+        end
         
-        SessionManager["Менеджер<br>сессий"] <-->|"Управление<br>состоянием"| WebSocketServer
-        SessionManager <-->|"Контроль<br>процессов"| AudioQueue
-        SessionManager <-->|"Контроль<br>процессов"| TextProcessor
+        SttLayer <-->|"Запросы и<br>ответы"| WhisperConnector
+        TranslationLayer <-->|"Запросы и<br>ответы"| LlmConnector
+        TtsLayer <-->|"Запросы и<br>ответы"| TtsConnector
         
-        ErrorHandler["Обработчик<br>ошибок"] <-->|"Мониторинг"| SessionManager
-        ErrorHandler <-->|"Обработка<br>ошибок"| ASRClient
-        ErrorHandler <-->|"Обработка<br>ошибок"| TranslationClient
-        ErrorHandler <-->|"Обработка<br>ошибок"| TTSClient
+        RemoteLogger["Логгер событий<br>RemoteLogger"] <-->|"Логирование"| SttLayer
+        RemoteLogger <-->|"Логирование"| TranslationLayer
+        RemoteLogger <-->|"Логирование"| TtsLayer
+        RemoteLogger -->|"Отправка<br>логов"| SocketIOServer
+        
+        LlmSteps["Шаги LLM<br>BaseStep"] <-->|"Обработка<br>запросов"| TranslationLayer
     end
     
-    SynchroClient["synchro-python"] <-->|"WebSocket"| WebSocketServer
+    Client["synchro-python"] <-->|"Socket.IO<br>WebSocket"| SocketIOServer
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef queue fill:#bfb,stroke:#333,stroke-width:1px;
-    classDef client fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef layer fill:#bfb,stroke:#333,stroke-width:1px;
+    classDef connector fill:#bbf,stroke:#333,stroke-width:1px;
     classDef external fill:#fbb,stroke:#333,stroke-width:1px;
     classDef manager fill:#ddd,stroke:#333,stroke-width:1px;
     
-    class WebSocketServer,TextProcessor,SessionManager core;
-    class AudioQueue,AudioResponseQueue queue;
-    class ASRClient,TranslationClient,TTSClient client;
-    class WhisperAPI,LLM,TTS,SynchroClient external;
-    class ErrorHandler manager;
+    class SocketIOServer,PipelineManager,SessionManager core;
+    class SttLayer,TranslationLayer,TtsLayer,LlmSteps layer;
+    class WhisperConnector,LlmConnector,TtsConnector,PipelineCallback connector;
+    class WhisperAPI,LLM,TTS,Client external;
+    class RemoteLogger manager;
 ```
 
 ### Основные процессы в streaming-proxy:
 
-1. **Управление соединениями**:
-   - Прием входящих WebSocket соединений от клиентов
-   - Аутентификация и авторизация клиентов
-   - Управление сессиями перевода
+1. **Управление сессиями и соединениями**:
+   - Прием входящих Socket.IO соединений от клиентов
+   - Настройка потоков перевода с выбором языков источника и назначения
+   - Создание и управление пайплайнами обработки для каждой сессии
+   - Обработка событий подключения/отключения клиентов
 
-2. **Обработка аудиопотока**:
-   - Буферизация входящего аудио
-   - Формирование пакетов для ASR
-   - Определение границ речевых сегментов
+2. **Организация пайплайна обработки**:
+   - Создание трехслойной архитектуры (распознавание, перевод, синтез)
+   - Асинхронная обработка потоков данных между слоями
+   - Параллельное выполнение циклов обработки для каждого слоя
+   - Управление жизненным циклом пайплайнов
 
-3. **Взаимодействие с whisper_grpc_api (ASR)**:
-   - Отправка аудиопакетов в сервис распознавания
-   - Получение распознанного текста
-   - Обработка ошибок распознавания
+3. **Распознавание речи (SttLayer)**:
+   - Отправка аудиоданных через gRPC в Whisper API
+   - Потоковое получение распознанного текста
+   - Фильтрация стоп-слов и буферизация результатов
+   - Сегментация текста для обработки
 
-4. **Взаимодействие с LLM-сервисом**:
-   - Передача распознанного текста для перевода
-   - Получение переведенного текста
-   - Обработка контекста для более точного перевода
+4. **Перевод текста (TranslationLayer)**:
+   - Пошаговая обработка текста через различные этапы LLM
+   - Гейтинг контента для фильтрации ненужных фрагментов
+   - Формирование запросов к LLM API с использованием шаблонов
+   - Обработка ответов и поддержание контекста перевода
 
-5. **Взаимодействие с tts_grpc_api**:
-   - Отправка переведенного текста для синтеза речи
-   - Получение синтезированного аудио
-   - Управление параметрами синтеза (голос, темп)
+5. **Синтез речи (TtsLayer)**:
+   - Отправка переведенного текста в TTS сервис через gRPC
+   - Получение фрагментов синтезированной речи
+   - Добавление интервалов тишины между фрагментами
+   - Передача аудиорезультатов обратно клиенту
 
-6. **Возврат аудиопотока клиенту**:
+6. **Логирование и аналитика**:
+   - Сбор и отправка метрик и логов клиенту
+   - Измерение времени выполнения операций
+   - Отслеживание производительности каждого этапа обработки
+   - Структурированное логирование событий с контекстом
+
+7. **Возврат аудиопотока клиенту**:
    - Формирование потока с переведенной речью
-   - Отправка через WebSocket клиенту
-   - Управление качеством сервиса (QoS)
+   - Отправка через Socket.IO клиенту
+   - Управление качеством и параметрами синтеза (голос, темп)
 
 ### Технические детали:
 
-- **Язык программирования**: Python/Node.js
-- **Протоколы связи**: 
-  - WebSocket для взаимодействия с клиентами
-  - gRPC для взаимодействия с сервисами ASR и TTS
-  - REST API для взаимодействия с LLM
-- **Асинхронное программирование**: asyncio или event-driven архитектура
-- **Мониторинг и логирование**: Prometheus, ELK stack или другие системы
+- **Язык программирования**: Python
+- **Серверный фреймворк**: Socket.IO AsyncServer с ASGI-совместимостью
+- **Асинхронная обработка**: asyncio для параллельного выполнения слоев пайплайна
+- **Коннекторы внешних сервисов**:
+  - WhisperSttConnector: gRPC клиент для сервиса распознавания речи
+  - LlamaCppServerConnector: HTTP клиент для LLM сервиса
+  - PiperVoskConnector: gRPC клиент для сервиса синтеза речи
+- **Буферизация**: TimeoutTextBuffer для обработки и сегментации текста
+- **Протоколы связи**: gRPC для ASR и TTS, HTTP для LLM
+- **Модульная архитектура**: трехслойная структура с разделением ответственности
+- **Логирование**: RemoteLogger для отправки событий клиенту
+- **Шаги обработки LLM**: Настраиваемые шаги обработки (гейтинг, перевод, коррекция)
+- **Управление конфигурацией**: Pydantic-схемы для валидации настроек
 
 ## whisper_grpc_api (Распознавание речи)
 
@@ -270,77 +328,96 @@ flowchart TB
 
 ## tts_grpc_api (Синтез речи)
 
-tts_grpc_api - сервис синтеза речи (TTS), преобразующий текст в естественно звучащую речь с поддержкой множества языков и голосов.
+tts_grpc_api - сервис синтеза речи (TTS), преобразующий текст в естественно звучащую речь с поддержкой множества языков и голосов, основанный на двух ключевых системах: Piper и Vosk TTS.
 
 ```mermaid
 flowchart TB
     subgraph "tts_grpc_api"
         direction TB
         
-        gRPCServer["gRPC<br>сервер"] -->|"Текст для<br>синтеза"| TextPreprocessor["Препроцессор<br>текста"]
+        GRPCServer["gRPC<br>SynthesizerService"] -->|"Запрос<br>синтеза"| ServiceRouter["Маршрутизатор<br>сервисов"]
         
-        TextPreprocessor -->|"Нормализованный<br>текст"| TTSModel["Модель<br>синтеза речи"]
+        subgraph "Piper TTS Engine"
+            PiperService["Piper<br>Service"] <-->|"Управление<br>моделями"| VoiceManager["Менеджер<br>Голосов"]
+            PiperService -->|"Текст для<br>синтеза"| Phonemizer["Фонемизатор"]
+            Phonemizer -->|"Последовательность<br>фонем"| PiperModel["ONNX<br>Модель"]
+            PiperModel -->|"Аудио<br>данные"| AudioProcessor["Аудио<br>Процессор"]
+        end
         
-        VoiceManager["Менеджер<br>голосов"] <-->|"Выбор<br>голоса"| TTSModel
+        subgraph "Vosk TTS Engine"
+            VoskService["Vosk<br>Service"] -->|"Текст для<br>синтеза"| G2P["Конвертер<br>Графема-Фонема"]
+            G2P -->|"Фонетическое<br>представление"| VoskModel["ONNX<br>Модель"]
+            VoskModel -->|"Аудио<br>данные"| AudioFader["Контроллер<br>Громкости"]
+        end
         
-        TTSModel -->|"Синтезированное<br>аудио"| AudioPostprocessor["Постпроцессор<br>аудио"]
+        ServiceRouter -->|"Piper<br>запрос"| PiperService
+        ServiceRouter -->|"Vosk<br>запрос"| VoskService
         
-        AudioPostprocessor -->|"Обработанное<br>аудио"| StreamingManager["Менеджер<br>потоковой передачи"]
+        AudioProcessor -->|"Обработанное<br>аудио"| AudioChunker["Разделитель<br>на чанки"]
+        AudioFader -->|"Обработанное<br>аудио"| AudioChunker
         
-        StreamingManager -->|"Аудиопоток"| gRPCServer
+        AudioChunker -->|"Аудио<br>поток"| GRPCServer
         
-        ModelSelector["Селектор<br>моделей"] <-->|"Выбор модели<br>по языку"| TTSModel
+        ModelInitializer["Инициализатор<br>Моделей"] -.->|"Загрузка<br>моделей"| PiperModel
+        ModelInitializer -.->|"Загрузка<br>моделей"| VoskModel
         
-        ProsodyControl["Контроль<br>просодии"] <-->|"Настройка<br>интонации"| TTSModel
     end
     
-    StreamingProxy["streaming-proxy"] <-->|"gRPC"| gRPCServer
+    StreamingProxy["streaming-proxy"] <-->|"gRPC<br>запросы/ответы"| GRPCServer
     
     classDef core fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef processor fill:#bfb,stroke:#333,stroke-width:1px;
-    classDef manager fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef engine fill:#bfb,stroke:#333,stroke-width:1px;
+    classDef processor fill:#bbf,stroke:#333,stroke-width:1px;
     classDef external fill:#fbb,stroke:#333,stroke-width:1px;
     
-    class gRPCServer,TTSModel core;
-    class TextPreprocessor,AudioPostprocessor processor;
-    class VoiceManager,StreamingManager,ModelSelector,ProsodyControl manager;
+    class GRPCServer,ServiceRouter core;
+    class PiperService,VoskService,PiperModel,VoskModel engine;
+    class Phonemizer,G2P,AudioProcessor,AudioFader,AudioChunker,VoiceManager,ModelInitializer processor;
     class StreamingProxy external;
 ```
 
 ### Основные процессы в tts_grpc_api:
 
-1. **Прием текста для синтеза**:
-   - Получение текста через gRPC
-   - Парсинг дополнительных параметров (голос, скорость)
-   - Валидация входных данных
+1. **Маршрутизация запросов синтеза речи**:
+   - Получение текста и параметров синтеза через gRPC API
+   - Определение запрашиваемого TTS сервиса (Piper или Vosk)
+   - Перенаправление запроса соответствующему обработчику
 
-2. **Предобработка текста**:
-   - Нормализация (числа, даты, аббревиатуры)
-   - Анализ синтаксической структуры
-   - Разделение на фрагменты для синтеза
+2. **Работа с Piper TTS**:
+   - Загрузка соответствующей модели для запрошенного голоса
+   - Фонемизация текста с использованием espeak или графемно-фонемных конвертеров
+   - Преобразование фонем в идентификаторы для модели
+   - Синтез речи с использованием ONNX моделей
+   - Потоковая обработка и возврат аудио
 
-3. **Синтез речи**:
-   - Выбор подходящей модели и голоса
-   - Выполнение инференса нейросетевой модели
-   - Генерация аудио с нужными характеристиками
+3. **Работа с Vosk TTS**:
+   - Загрузка модели для нужного языка
+   - Графемно-фонемное преобразование текста
+   - Синтез речи с применением ONNX модели
+   - Настройка параметров синтеза (скорость речи, выбор дикторов)
+   - Обработка громкости аудио
 
-4. **Постобработка аудио**:
-   - Нормализация громкости
-   - Фильтрация артефактов
-   - Сглаживание переходов между фрагментами
+4. **Управление моделями**:
+   - Инициализация и загрузка ONNX моделей в память
+   - Кэширование моделей для повторного использования
+   - Управление несколькими голосами для разных языков
+   - Выбор подходящего провайдера выполнения (CPU/CUDA)
 
 5. **Потоковая передача**:
-   - Формирование аудиопотока
-   - Отправка через gRPC
-   - Управление буферизацией
+   - Разделение синтезированного аудио на чанки
+   - Потоковая отправка аудио через gRPC
+   - Управление двунаправленным потоковым синтезом для интерактивного взаимодействия
 
 ### Технические детали:
 
-- **Модели TTS**: FastSpeech, Tacotron, WaveNet или аналогичные
-- **Язык программирования**: Python с PyTorch/TensorFlow
-- **Audio Processing**: librosa, soundfile
-- **gRPC** для API
-- **Голосовая библиотека**: набор предобученных голосовых моделей для разных языков
+- **Модели синтеза**: 
+  - **Piper**: ONNX модели на основе VITS (Variational Inference with adversarial learning for end-to-end TTS)
+  - **Vosk TTS**: Модели, основанные на нейросетевых архитектурах для синтеза речи
+- **Языки программирования**: Python с ONNX Runtime для инференса
+- **Фонемизация**: Библиотеки piper_phonemize и espeak для преобразования текста в фонемы
+- **Обработка аудио**: Управление громкостью, нормализация и потоковая передача
+- **gRPC API**: Унифицированный интерфейс для различных TTS бэкендов
+- **Инференс моделей**: Поддержка как CPU, так и GPU (CUDA) для оптимизации производительности
 
 ## Взаимодействие компонентов и жизненный цикл запроса
 
